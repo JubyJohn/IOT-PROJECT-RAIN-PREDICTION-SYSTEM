@@ -1,0 +1,150 @@
+/************ BLYNK CONFIG ************/
+
+#define BLYNK_TEMPLATE_ID "############"
+#define BLYNK_TEMPLATE_NAME "RAIN PREDICTION SYSTEM"
+#define BLYNK_AUTH_TOKEN "********************************"
+
+#define BLYNK_PRINT Serial
+
+#include <ESP8266WiFi.h>
+#include <BlynkSimpleEsp8266.h>
+
+/************ SENSOR & DISPLAY ************/
+#include <Wire.h>
+#include <DHT.h>
+#include <Adafruit_BMP280.h>
+#include <Adafruit_GFX.h>
+#include <Adafruit_SSD1306.h>
+
+/************ WIFI ************/
+char ssid[] = "###############";
+char pass[] = "***********";
+
+/************ DHT11 ************/
+#define DHTPIN D4
+#define DHTTYPE DHT11
+DHT dht(DHTPIN, DHTTYPE);
+
+/************ BMP280 ************/
+Adafruit_BMP280 bmp;
+
+/************ OLED ************/
+#define SCREEN_WIDTH 128
+#define SCREEN_HEIGHT 64
+#define OLED_RESET -1
+#define OLED_ADDR 0x3C
+Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
+
+/************ TIMER ************/
+BlynkTimer timer;
+
+/************ FUNCTION ************/
+void readSensors()
+{
+  float humidity = dht.readHumidity();
+  float temperature = dht.readTemperature();
+  float pressure = bmp.readPressure() / 100.0F; // hPa
+
+  if (isnan(humidity) || isnan(temperature)) {
+    Serial.println("DHT read failed");
+    return;
+  }
+
+  String prediction;
+
+  if (humidity > 60 /*&& pressure < 1000*/) {
+    prediction = "RAIN LIKELY";
+    Blynk.logEvent("rain_alert", "🌧 Rain Likely!");
+  } 
+  else if (humidity >= 50 && humidity <= 60) {
+    prediction = "POSSIBLE RAIN";
+    Blynk.logEvent("rain_alert", "🌧 POSSIBLE RAIN!");
+  } 
+  else {
+    prediction = "NO RAIN";
+  }
+
+  /************ OLED ************/
+  display.clearDisplay();
+display.setTextColor(SSD1306_WHITE);
+
+// TEMPERATURE
+display.setTextSize(2);
+display.setCursor(0, 0);
+display.print("T:");
+display.print(temperature, 1);
+display.print("C");
+
+// HUMIDITY
+display.setCursor(0, 22);
+display.print("H:");
+display.print(humidity, 0);
+display.print("%");
+
+// PRESSURE
+display.setCursor(0, 44);
+display.print("P:");
+display.print(pressure, 0);
+display.print("hPa");
+
+display.display();
+
+  /************ SERIAL ************/
+  Serial.println("-----------------------");
+  Serial.print("Temp: "); Serial.println(temperature);
+  Serial.print("Humidity: "); Serial.println(humidity);
+  Serial.print("Pressure: "); Serial.println(pressure);
+  Serial.print("Prediction: "); Serial.println(prediction);
+
+  /************ BLYNK ************/
+  Blynk.virtualWrite(V1, temperature);
+  Blynk.virtualWrite(V2, humidity);
+  Blynk.virtualWrite(V3, pressure);
+
+  if (temperature > 25) {
+    Blynk.logEvent("temp_alert", "🔥 High Temperature Alert!");
+  }
+}
+
+/************ SETUP ************/
+void setup()
+
+{
+  Serial.begin(9600);
+
+  Wire.begin(D2, D1); // SDA, SCL
+
+  dht.begin();
+
+  if (!bmp.begin(0x76)) {
+    Serial.println("BMP280 not found");
+    while (1);
+  }
+
+  if (!display.begin(SSD1306_SWITCHCAPVCC, OLED_ADDR)) {
+    Serial.println("OLED not found");
+    while (1);
+  }
+
+ 
+  display.clearDisplay();
+  display.setTextColor(SSD1306_WHITE);
+  display.setTextSize(2);
+  display.setCursor(0, 0);
+  display.println("BOOTING");
+  display.display();
+
+  delay(2000); // allow OLED to refresh
+
+  Blynk.begin(BLYNK_AUTH_TOKEN, ssid, pass);
+
+  timer.setInterval(2000L, readSensors);
+}
+
+
+/************ LOOP ************/
+void loop()
+{
+  Blynk.run();
+  timer.run();
+}
